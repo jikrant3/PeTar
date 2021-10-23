@@ -106,6 +106,10 @@ EXT_CLEAN:
 	$(MAKE) -C galpy-interface clean
 endif
 
+ifeq ($(ext_mode),disk)
+MT_FLAGS += -D DISK_POT
+endif
+
 ifeq ($(step_mode),kdkdk)
 MT_FLAGS += -D KDKDK_2ND
 else ifeq ($(step_mode),kdkdk4)

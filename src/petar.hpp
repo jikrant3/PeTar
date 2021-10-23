@@ -85,6 +85,9 @@ int MPI_Irecv(void* buffer, int count, MPI_Datatype datatype, int dest, int tag,
 #ifdef GALPY
 #include"galpy_interface.h"
 #endif
+#ifdef DISK_POT
+#include "disk_potential.hpp"
+#endif
 
 //! IO parameters for Petar
 class IOParamsPeTar{
@@ -628,6 +631,9 @@ public:
 #ifdef GALPY
     IOParamsGalpy galpy_parameters;
 #endif
+#ifdef DISK_POT
+    IOParamsDisk disk_parameters;
+#endif
 
 #ifdef PROFILE
     PS::S32 dn_loop;
@@ -673,6 +679,9 @@ public:
 #ifdef GALPY
     GalpyManager galpy_manager;
 #endif
+#ifdef DISK_POT
+    DiskPotentialManager disk_manager;
+#endif
 
     // hard integrator
     HardManager hard_manager;
@@ -716,6 +725,10 @@ public:
 #ifdef GALPY
         galpy_parameters(),
 #endif
+#ifdef DISK_POT
+        disk_parameters(),
+#endif
+
 #ifdef PROFILE
         // profile
         dn_loop(0), profile(), n_count(), n_count_sum(), tree_soft_profile(), fprofile(), 
@@ -728,6 +741,9 @@ public:
         tree_nb(), tree_soft(), 
 #ifdef GALPY
         galpy_manager(),
+#endif
+#ifdef DISK_POT
+        disk_manager(),
 #endif
         hard_manager(), system_hard_one_cluster(), system_hard_isolated(), 
 #ifdef PARTICLE_SIMULATOR_MPI_PARALLEL
@@ -1028,6 +1044,52 @@ public:
 #ifdef PROFILE
         profile.other.start();
 #endif
+
+#ifdef DISK_POT
+        // external force from disk
+        PS::S64 n_loc_all = system_soft.getNumberOfParticleLocal();
+        
+        PS::F64vec smbh_pos;
+        int rank_find=0;
+        for (int i=0; i<n_loc_all; i++) {
+            auto& pi = system_soft[i];
+            if (pi.id == disk_manager.center_id) {
+                rank_find = my_rank+1;
+                smbh_pos = pi.pos;
+            }
+        }
+#ifdef PARTICLE_SIMULATOR_MPI_PARALLEL
+        int rank_send = PS::Comm::getSum(rank_find)-1;
+        assert(rank_send<n_proc&&rank_send>=0);
+        PS::Comm::broadcast(&smbh_pos, 1, rank_send);
+#endif
+
+        disk_manager.updateParameters(stat.time);
+
+#pragma omp parallel for
+        for (int i=0; i<n_loc_all; i++) {
+            auto& pi = system_soft[i];
+            double acc[3], pot;
+            PS::F64vec pos_correct=pi.pos - smbh_pos;
+            if (pi.id != disk_manager.center_id) {
+                disk_manager.calcAccPot(acc, pot, pi.mass, &pos_correct[0]);
+
+                pi.acc[0] += acc[0]; 
+                pi.acc[1] += acc[1]; 
+                pi.acc[2] += acc[2]; 
+                pi.pot_tot += pot;
+                pi.pot_soft += pot;
+#ifdef EXTERNAL_POT_IN_PTCL
+                pi.pot_ext = pot;
+#endif
+            }
+            else {
+#ifdef EXTERNAL_POT_IN_PTCL
+                pi.pot_ext = 0;
+#endif
+            }
+        }
+#endif // DISK_POT
 
 #ifdef GALPY
         // external force and potential
@@ -2576,6 +2638,12 @@ public:
         galpy_parameters.read(argc,argv);
 #endif
 
+#ifdef DISK_POT
+        if (my_rank==0) disk_parameters.print_flag=true;
+        else disk_parameters.print_flag=false;
+        disk_parameters.read(argc,argv);
+#endif
+
         // help case, return directly
         if (read_flag==-1) {
             // avoid segmentation fault due to FDPS clear function bug
@@ -3050,6 +3118,10 @@ public:
             galpy_parameters.setStdUnit(print_flag);
 #endif
 
+#ifdef DISK_POT
+            disk_parameters.gravitational_constant.value = input_parameters.gravitational_constant.value;
+#endif
+
         }
 
         // calculate system parameters
@@ -3295,6 +3367,10 @@ public:
 #ifdef GALPY
         galpy_manager.initial(galpy_parameters, stat.time, print_flag);
 #endif
+
+#ifdef DISK_POT
+        disk_manager.initial(disk_parameters, stat.time, print_flag);
+#endif
     
         // set system hard paramters
         hard_manager.setDtRange(input_parameters.dt_soft.value/input_parameters.dt_limit_hard_factor.value, input_parameters.dt_min_hermite_index.value);
@@ -3409,6 +3485,18 @@ public:
                 abort();
             }
             galpy_parameters.input_par_store.writeAscii(fpar_out);
+            fclose(fpar_out);
+#endif
+
+#ifdef DISK_POT
+            // save galpy parameters
+            std::string fdisk_par = input_parameters.fname_par.value + ".disk";
+            if (print_flag) std::cout<<"Save disk_parameters to file "<<fdisk_par<<std::endl;
+            if( (fpar_out = fopen(fdisk_par.c_str(),"w")) == NULL) {
+                fprintf(stderr,"Error: Cannot open file %s.\n", fdisk_par.c_str());
+                abort();
+            }
+            disk_parameters.input_par_store.writeAscii(fpar_out);
             fclose(fpar_out);
 #endif
         }
