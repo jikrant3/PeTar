@@ -20,7 +20,7 @@ public:
     IOParamsDisk(): input_par_store(),
                     gravitational_constant(input_par_store, 1.0, "disk-G","gravitational constant"),
                     semi_in (input_par_store, 1e-5, "disk-ain", "inner semi-major axis"),
-                    semi_out(input_par_store, 1e-2, "disk-ain", "inner semi-major axis"),
+                    semi_out(input_par_store, 1e-2, "disk-aout", "outer semi-major axis"),
                     epsilon (input_par_store, 1.0, "disk-epsilon", "epsilon 0"),
                     r0      (input_par_store, 1e-2, "disk-R0", "R0"),
                     tau_dep (input_par_store, 1.0, "disk-tau-dep", "tau_dep"),
@@ -229,9 +229,9 @@ public:
      */
     void calcAccPot(double* acc, double& pot, double& mass, const double* pos) {
         double r = std::sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]);
-        double coefficient = epsilon_prefix*std::pow(r, 1.5);
+        double coefficient = epsilon_prefix*std::pow(r, -1.5);
         
-        if (mass>imc_mass) { //IMC
+        if (mass<imc_mass) { //Star
             double a = -coefficient*zk;
             acc[0] = a*pos[0]/r;
             acc[1] = a*pos[1]/r;
@@ -239,7 +239,7 @@ public:
 
             pot = 2*coefficient*r*zk;
         }
-        else { //Star
+        else { //IMC
             double i_fact = 1;    // i!
             double i2_fact = 1;   // (2*i)!
             double two_power = 1;  // 2^(2*i)
@@ -248,8 +248,8 @@ public:
             pot = std::pow(r/semi_out, 0.5) + std::pow(semi_in/r, 0.5); // i=0 no coeff
 
             for (int i=1; i<=power_order; i++) {
-                i_fact *= i_fact*i;
-                i2_fact *= i2_fact*i*2;
+                i_fact *= i;
+                i2_fact *= i*2*(2*i-1);
                 two_power *= 4;
 
                 double Ai = i2_fact/(two_power * i_fact*i_fact);
@@ -261,7 +261,7 @@ public:
             }
             
             a *= coefficient;
-            pot *= coefficient;
+            pot *= coefficient*r;
             
             acc[0] = a*pos[0]/r;
             acc[1] = a*pos[1]/r;

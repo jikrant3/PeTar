@@ -240,7 +240,7 @@ public:
     //! Get neighbor distance criterion 
     PS::F64 getRNeighbor() const {
 #ifdef HARD_DEBUG
-        assert(r_search>changeover.getRout());
+        assert(r_search>=changeover.getRout());
 #endif 
         return r_search;
     }
