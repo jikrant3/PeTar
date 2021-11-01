@@ -14,6 +14,7 @@ public:
     IOParams<double> imc_mass;
     IOParams<long long int> power_order;
     IOParams<long long int> center_id;
+    IOParams<long long int> option;
 
     bool print_flag;
     
@@ -28,6 +29,7 @@ public:
                     imc_mass(input_par_store, 100, "disk-imc-mass", "mass cutoff to find IMC"),
                     power_order(input_par_store, 20, "disk-order", "power index order of force"),
                     center_id(input_par_store, 1, "disk-center-id", "ID of centeral particle (SMBH)"),
+                    option(input_par_store, 3, "disk-option", "0: no disk force; 1: force to star; 2: force to IMC; 3: force to star and IMC"),
                     print_flag(false) {}
 
     //! reading parameters from GNU option API
@@ -50,6 +52,7 @@ public:
             {center_id.key,    required_argument, &disk_flag, 7}, 
             {imc_mass.key,     required_argument, &disk_flag, 8}, 
             {zk.key,           required_argument, &disk_flag, 9}, 
+            {option.key,       required_argument, &disk_flag, 10},
             {"help", no_argument, 0, 'h'},
             {0,0,0,0}
         };
@@ -114,6 +117,11 @@ public:
                     if (print_flag) zk.print(std::cout);
                     opt_used+= 2;
                     break;
+                case 10:
+                    option.value = atoi(optarg);
+                    if (print_flag) zk.print(std::cout);
+                    opt_used+= 2;
+                    break;
                 default:
                     break;
                 }
@@ -168,6 +176,7 @@ public:
     double tau_dep;
     double imc_mass;
     double zk;
+    int option;
     int power_order;
     int center_id;
 
@@ -190,6 +199,7 @@ public:
         tau_dep = _input.tau_dep.value;
         power_order = _input.power_order.value;
         center_id = _input.center_id.value;
+        option = _input.option.value;
         imc_mass = _input.imc_mass.value;
         zk = _input.zk.value;
 
@@ -205,6 +215,7 @@ public:
                      <<" c.m. id: "<<center_id
                      <<" IMC_mass: "<<imc_mass
                      <<" Zk: "<<zk
+                     <<" Option: "<<option
                      <<std::endl;
         }
 
@@ -228,46 +239,51 @@ public:
       @param[in] pos: position of particles referring to SMBH position [input unit];
      */
     void calcAccPot(double* acc, double& pot, double& mass, const double* pos) {
-        double r = std::sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]);
-        double coefficient = epsilon_prefix*std::pow(r, -1.5);
+        if (option>0) {
+
+            double r = std::sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]);
+            double coefficient = epsilon_prefix*std::pow(r, -1.5);
         
-        if (mass<imc_mass) { //Star
-            double a = -coefficient*zk;
-            acc[0] = a*pos[0]/r;
-            acc[1] = a*pos[1]/r;
-            acc[2] = a*pos[2]/r;
+            if (mass<imc_mass) { //Star
+                if (option==1 || option==3) {
+                    double a = -coefficient*zk;
+                    acc[0] = a*pos[0]/r;
+                    acc[1] = a*pos[1]/r;
+                    acc[2] = a*pos[2]/r;
 
-            pot = 2*coefficient*r*zk;
-        }
-        else { //IMC
-            double i_fact = 1;    // i!
-            double i2_fact = 1;   // (2*i)!
-            double two_power = 1;  // 2^(2*i)
-
-            double a = std::pow(semi_in/r, 0.5); // i=0 no coeff
-            pot = std::pow(r/semi_out, 0.5) + std::pow(semi_in/r, 0.5); // i=0 no coeff
-
-            for (int i=1; i<=power_order; i++) {
-                i_fact *= i;
-                i2_fact *= i*2*(2*i-1);
-                two_power *= 4;
-
-                double Ai = i2_fact/(two_power * i_fact*i_fact);
-                Ai = Ai*Ai;
-                double ra_left = std::pow(r/semi_out, 2*i+0.5);
-                double ra_right = std::pow(semi_in/r, 2*i+0.5);
-                a += Ai/(4*i+1) * (2*i* ra_left - (2*i+1)*ra_right);
-                pot += Ai/(4*i+1) * (ra_left + ra_right);
+                    pot = 2*coefficient*r*zk;
+                }
             }
-            
-            a *= coefficient;
-            pot *= coefficient*r;
-            
-            acc[0] = a*pos[0]/r;
-            acc[1] = a*pos[1]/r;
-            acc[2] = a*pos[2]/r;
+            else { //IMC
+                if (option==2 || option==3) {
+                    double i_fact = 1;    // i!
+                    double i2_fact = 1;   // (2*i)!
+                    double two_power = 1;  // 2^(2*i)
 
+                    double a = std::pow(semi_in/r, 0.5); // i=0 no coeff
+                    pot = std::pow(r/semi_out, 0.5) + std::pow(semi_in/r, 0.5); // i=0 no coeff
+
+                    for (int i=1; i<=power_order; i++) {
+                        i_fact *= i;
+                        i2_fact *= i*2*(2*i-1);
+                        two_power *= 4;
+
+                        double Ai = i2_fact/(two_power * i_fact*i_fact);
+                        Ai = Ai*Ai;
+                        double ra_left = std::pow(r/semi_out, 2*i+0.5);
+                        double ra_right = std::pow(semi_in/r, 2*i+0.5);
+                        a += Ai/(4*i+1) * (2*i* ra_left - (2*i+1)*ra_right);
+                        pot += Ai/(4*i+1) * (ra_left + ra_right);
+                    }
+            
+                    a *= coefficient;
+                    pot *= coefficient*r;
+            
+                    acc[0] = a*pos[0]/r;
+                    acc[1] = a*pos[1]/r;
+                    acc[2] = a*pos[2]/r;
+                }
+            }
         }
-
     }
 };
