@@ -239,6 +239,7 @@ public:
       @param[in] pos: position of particles referring to SMBH position [input unit];
      */
     void calcAccPot(double* acc, double& pot, double& mass, const double* pos) {
+        acc[0] = acc[1] = acc[2] = pot = 0.0;
         if (option>0) {
 
             double r = std::sqrt(pos[0]*pos[0] + pos[1]*pos[1] + pos[2]*pos[2]);
